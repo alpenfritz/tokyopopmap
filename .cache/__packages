@@ -1,0 +1,10 @@
+base
+leaflet
+sp
+rgdal
+htmlwidgets
+knitr
+ggplot2
+gridExtra
+dplyr
+tidyr

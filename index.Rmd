@@ -1,0 +1,174 @@
+---
+title       : "Shiny App"
+subtitle    : "Tokyo Population Map"
+author      : "Fritz Lin"
+framework   : revealjs        # {io2012, html5slides, shower, dzslides, ...}
+highlighter : highlight.js  # {highlight.js, prettify, highlight}
+hitheme     : tomorrow      # 
+widgets     : []            # {mathjax, quiz, bootstrap}
+mode        : selfcontained # {standalone, draft}
+knit        : slidify::knit2slides
+---
+
+<style>
+code {
+  color: red;
+}
+
+strong {
+  font-weight: 900;
+  color: #42f48f;
+}
+</style>
+
+## Developing Data Products
+---------------------
+
+### Shiny App: Tokyo Population Map
+
+Coursera Data Science Specialization  
+Fritz Lin  
+September, 21st 2017
+
+---  
+
+## Introduction
+
+* This presentation is part of the [Coursera course on Developing Data Products](https://www.coursera.org/learn/data-products) 
+
+* The **Shiny app** pitched by this presentation is at
+https://alpenfritz.shinyapps.io/tokyopopmap/
+
+* The Shiny app **source code** is available at
+https://github.com/alpenfritz/tokyopopmap/tree/master/app
+
+--- 
+
+## Tokyo Population Map App
+
+* The [Tokyo Population Map App](https://alpenfritz.shinyapps.io/tokyopopmap/) shows the population size in each of the 23 wards of Tokyo
+    - population size of each ward is further subdivided by *gender* and *age*
+
+* **Interactive Map** using `leaflet` package to show information
+    - population sizes of wards highlighted by a **choeroplath map**
+    - using **popups** to display information on each ward 
+
+* **Bar graphs** for comparing general population sizes or population sizes by gender and age
+    - possible to filter depending on population size using a **slider**
+
+--- 
+
+## Interactive Map
+```{r, echo = FALSE}
+# Load static data
+tWards <- readRDS('app/data/twards84.Rds')
+```
+
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, results='asis'}
+library(leaflet)
+library(rgdal)
+library(htmlwidgets)
+library(knitr)
+
+# Find the edges of our map
+bounds<-bbox(tWards)
+
+pal <- colorBin("BuPu", tWards$POP_2015)
+
+myPopup <- paste0("<strong>",tWards$CITY_ENG,"</strong> ",
+                    tWards$SIKUCHOSON,
+                    "<br><strong>Population:</strong> ",
+                    formatC(tWards$POP_2015, format="d", big.mark = ","),
+                    "<br><strong>Male:</strong> ",
+                    formatC(tWards$M_2015, format="d", big.mark = ","),
+                    "<br><strong>Female:</strong> ",
+                    formatC(tWards$F_2015, format="d", big.mark = ","),
+                    "<br><strong>15未満:</strong> ",
+                    formatC(tWards$`15未満_2015`, format="d", big.mark = ","),
+                    "<br><strong>15-64:</strong> ",
+                    formatC(tWards$`15-64_2015`, format="d", big.mark = ","),
+                    "<br><strong>65以上:</strong> ",
+                    formatC(tWards$`65以上_2015`, format="d", big.mark = ","))
+
+l <- leaflet() %>%
+      addProviderTiles("Esri.WorldStreetMap", group = "Esri.WorldStreetMap") %>%
+      addProviderTiles("Esri.WorldImagery", group = "Esri.WorldImagery") %>%
+      addProviderTiles("OpenStreetMap.Mapnik", group = "OpenStreetMap.Mapnik") %>%
+      addProviderTiles("OpenStreetMap.BlackAndWhite", group = "OpenStreetMap.BlackAndWhite") %>%
+      # Centre the map in the middle of our co-ordinates
+      setView(mean(bounds[1,]),
+              mean(bounds[2,]),
+              zoom=11
+      ) %>%
+      addPolygons(data = tWards,
+                  color = "#000066", opacity = 1, weight = 2, group = "Choropleth Map",
+                  fillColor = ~pal(POP_2015), fillOpacity = 0.7,
+                  label=~paste0(CITY_ENG, " ", SIKUCHOSON),
+                  labelOptions= labelOptions(direction = 'auto', textsize="15px",
+                                             padding = "3px 8px"),
+                  layerId=~JCODE,
+                  popup = myPopup,
+                  highlightOptions = highlightOptions(color = "#666", weight = 5,
+                                                      bringToFront = TRUE)) %>%
+      addLegend(title = "Population Size", pal = pal, values=tWards@data$POP_2015,
+                opacity = 0.6, position="bottomright", group = "Choropleth Map") %>%
+      addLayersControl(baseGroups = c("Esri.WorldStreetMap",
+                                      "Esri.WorldImagery",
+                                      "OpenStreetMap.Mapnik",
+                                      "OpenStreetMap.BlackAndWhite"),
+                       overlayGroups = c("Choropleth Map"),
+                       options = layersControlOptions(collapsed = TRUE, autoZIndex = FALSE))
+
+# Move to img folder
+setwd("./assets/img")
+saveWidget(l, "leaflet.html") # Save widget html
+setwd("../..")
+
+# Source saved file
+cat('<iframe src="./assets/img/leaflet.html" width=100% height=500px allowtransparency="true"> </iframe>')
+```
+
+--- 
+
+## Bar Graphs
+
+```{r bargraphs, echo = FALSE, warning=FALSE, message=FALSE, fig.height=7, fig.width=13, fig.align="center"}
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library(tidyr)
+
+g1 <- ggplot(tWards@data, aes(reorder(CITY_ENG,-POP_2015), POP_2015/1e3)) + 
+        geom_bar(stat="identity", fill="steelblue", width = 0.6) + 
+        coord_flip() +
+        labs(x = "", y = "")
+
+# subsetting
+df <- subset(tWards@data, POP_2015>=4e5 & POP_2015<=1e6)
+df <- dplyr::select(df, matches("JCODE|CITY_ENG|^M_2015|^F_2015"))
+df <- gather(df, GENDER, POP, -JCODE, -CITY_ENG)
+df$GENDER <- gsub(pattern = "_2015", replacement = "", df$GENDER)
+
+g2 <- ggplot(df, aes(reorder(CITY_ENG,-POP), POP/1e3, fill=GENDER)) + 
+          scale_fill_manual(values = c("#c43a3d", "steelblue")) +
+          geom_bar(stat="identity", position = position_dodge(), width = 0.8) + 
+          coord_flip() +
+          labs(x = "", y = "") +
+          theme(legend.position = c(0.8, 0.9))
+
+# subsetting
+df <- subset(tWards@data, POP_2015>=4e5 & POP_2015<=6e5)
+df <- dplyr::select(df, matches("JCODE|CITY_ENG|^15未満_2015|^15-64_2015|^65以上_2015"))
+df <- gather(df, AGE, POP, -JCODE, -CITY_ENG)
+df$AGE <- gsub(pattern = "_2015", replacement = "", df$AGE)
+      
+g3 <- ggplot(df, aes(reorder(CITY_ENG,-POP), POP/1e3, fill=AGE)) +
+          scale_fill_manual(values = c("steelblue", "#c43a3d", "#47892e")) +
+          geom_bar(stat="identity", position = position_dodge(), width = 0.8) + 
+          coord_flip() +
+          labs(x = "", y = "") +
+          theme(legend.position = c(0.8, 0.9))
+
+grid.arrange(g1,g2,g3, ncol=3)
+```
